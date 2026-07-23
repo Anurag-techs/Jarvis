@@ -21,6 +21,10 @@ class TestStartupManager(unittest.TestCase):
         self.assertIsNotNone(app.logger)
         self.assertIsNotNone(app.tool_registry)
         self.assertIsNotNone(app.orchestrator)
+        self.assertIsNotNone(app.tts_service)
+        self.assertIsNotNone(app.stt_provider)
+        self.assertIsNotNone(app.wake_word_detector)
+        self.assertIsNotNone(app.conversation_manager)
 
     def test_registered_tools_count(self) -> None:
         """Verifies that 7 tools are registered during bootstrap."""

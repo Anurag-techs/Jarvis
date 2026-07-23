@@ -2,28 +2,28 @@
 JARVIS Tool Registry.
 
 1. Why this module exists:
-   Implements the Registry Pattern to manage pluggable tools. Prevents monolithic
-   `if/elif/else` command routing trees in the core orchestrator.
+   Implements the Registry Pattern to manage pluggable tools and expose tool metadata schemas for AI Tool Calling.
 
 2. How it fits into the architecture:
-   Part of the Tool infrastructure layer. Injected into `SystemOrchestrator`.
+   Part of the Tool infrastructure layer. Injected into `SystemOrchestrator` and `ToolExecutor`.
 
 3. Which future modules will interact with it:
-   - `backend.core.orchestrator.SystemOrchestrator`
-   - Future plugin loader / dynamic extension mechanisms.
+   - `backend.tools.executor.ToolExecutor`
+   - `backend.conversation.system_prompt`
 
 4. Common mistakes to avoid:
    - Hardcoding tool instantiation inside the core orchestrator loop instead of using `register()`.
 
 5. Possible future improvements:
-   - Dynamic hot-reloading of tools from a designated `plugins/` directory.
+   - Dynamic hot-reloading of tools from a designated plugins directory.
 """
 
 import logging
 from typing import Any
 
 from backend.core.exceptions import ToolExecutionError
-from backend.tools.base import BaseTool, ToolResult
+from backend.core.models import ToolResult
+from backend.tools.base import BaseTool
 
 logger = logging.getLogger("jarvis.tools.registry")
 
@@ -52,6 +52,17 @@ class ToolRegistry:
     def list_tools(self) -> list[str]:
         """Returns list of registered tool names."""
         return list(self._tools.keys())
+
+    def get_available_tools(self) -> list[dict[str, Any]]:
+        """Returns list of registered tool metadata dictionaries including name, description, and parameters schema."""
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters_schema,
+            }
+            for tool in self._tools.values()
+        ]
 
     def __len__(self) -> int:
         """Returns number of registered tools."""

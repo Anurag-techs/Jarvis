@@ -2,37 +2,48 @@
 JARVIS Application Entrypoint.
 
 1. Why this module exists:
-   Serves as the execution entrypoint for running JARVIS Sprint 1 Application Bootstrap.
+   Serves as the main operational execution entrypoint for JARVIS.
 
 2. How it fits into the architecture:
    Presentation / Entrypoint layer. Contains NO business logic.
-   Delegates bootstrap execution strictly to `backend.core.startup.StartupManager`.
+   Delegates bootstrap execution to `StartupManager().bootstrap()` and runs `app.run(voice_mode=...)`.
+   Supports `--voice` and `--test-stt` CLI flags.
 
 3. Which future modules will interact with it:
-   CLI runner (`python -m backend.main`).
-
-4. Common mistakes to avoid:
-   - Adding tool registration, setting parsing, or business logic directly inside main.py.
-
-5. Possible future improvements:
-   - Command line flag parsing (e.g. `--version`, `--debug`).
+   CLI execution environment (`python -m backend.main`).
 """
 
 import sys
-from backend.core.startup import StartupManager
 from backend.core.exceptions import JarvisError
+from backend.core.startup import StartupManager
 
 
 def main() -> None:
-    """Main application entrypoint executing StartupManager bootstrap."""
+    """Main application entrypoint bootstrapping and launching JARVIS."""
+    args = sys.argv[1:]
+
     try:
-        startup_manager = StartupManager()
-        app_container = startup_manager.bootstrap()
+        app = StartupManager().bootstrap()
+
+        # Handle --test-stt verification mode
+        if "--test-stt" in args:
+            print("\n[STT Verification Mode]")
+            print("Listening to microphone for 5 seconds...")
+            transcript = app.stt_provider.listen_and_transcribe(duration=5.0)
+            print(f"\n[Transcribed Text]: '{transcript}'")
+            return
+
+        # Determine voice_mode flag from CLI arguments
+        voice_mode = "--voice" in args
+
+        # Default application lifecycle run
+        app.run(voice_mode=voice_mode)
+
     except JarvisError as exc:
         print(f"CRITICAL: Failed to start JARVIS: {exc.message}", file=sys.stderr)
         sys.exit(1)
     except Exception as exc:
-        print(f"CRITICAL: Unexpected error during JARVIS startup: {exc}", file=sys.stderr)
+        print(f"CRITICAL: Unexpected error during JARVIS execution: {exc}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -3,21 +3,19 @@ JARVIS System Orchestrator.
 
 1. Why this module exists:
    Acts as the single control plane orchestrating the lifecycle, receiving user requests,
-   coordinating intent resolution via AI/Tools, and returning final user feedback.
+   coordinating tool decision execution via `ToolExecutor`, delegating conversation context to `ConversationManager`,
+   triggering speech output, and returning structured `AssistantResponse`.
 
 2. How it fits into the architecture:
-   The core orchestrator lives in backend.core. It has ZERO direct business logic.
-   It relies entirely on Dependency Injection to delegate tasks to AI Services, Voice Managers,
-   and the Tool Registry.
+   The core orchestrator lives in `backend.core`. It has ZERO UI logic.
+   It relies entirely on Dependency Injection to delegate tasks to AI Providers, Tool Registry, ToolExecutor, ConversationManager, and TTS Service.
 
 3. Which future modules will interact with it:
-   - backend.main (CLI runner)
-   - backend.api.router (FastAPI HTTP / WebSocket endpoints in V2)
-   - Future background job event listeners
+   - `backend.interfaces.console.ConsoleInterface`
+   - `backend.api.router` (FastAPI HTTP / WebSocket endpoints in V2)
 
 4. Common mistakes to avoid:
-   - Adding direct tool execution logic or string manipulation inside this file.
-   - Instantiating concrete services or third-party APIs directly inside `__init__`.
+   - Adding direct console UI formatting or raw subprocess tool execution directly inside orchestrator code.
 
 5. Possible future improvements:
    - Asynchronous event bus emission for real-time UI status notifications.
@@ -26,22 +24,26 @@ JARVIS System Orchestrator.
 import logging
 
 from backend.ai.provider import BaseLLMProvider
-from backend.core.models import CommandResult, UserIntent
+from backend.conversation.manager import ConversationManager
+from backend.core.models import AssistantResponse, ToolResult, UserIntent
 from backend.memory.base import BaseMemoryStore
+from backend.tools.executor import ToolExecutor
 from backend.tools.registry import ToolRegistry
-from backend.voice.manager import VoiceManager
+from backend.voice.service import TTSService
 
 logger = logging.getLogger("jarvis.core.orchestrator")
 
 
 class SystemOrchestrator:
-    """Core Orchestrator coordinating AI providers, tool registry, and voice manager."""
+    """Core Orchestrator coordinating AI providers, tool registry, tool executor, conversation manager, and speech service."""
 
     def __init__(
         self,
         llm_provider: BaseLLMProvider,
         tool_registry: ToolRegistry,
-        voice_manager: VoiceManager | None = None,
+        tool_executor: ToolExecutor | None = None,
+        conversation_manager: ConversationManager | None = None,
+        tts_service: TTSService | None = None,
         memory_store: BaseMemoryStore | None = None,
     ) -> None:
         """Initialize orchestrator via constructor dependency injection.
@@ -49,12 +51,16 @@ class SystemOrchestrator:
         Args:
             llm_provider: Abstract AI LLM provider.
             tool_registry: Pluggable tool registry holding executable V1 tools.
-            voice_manager: Optional voice manager handling STT/TTS lifecycle.
-            memory_store: Optional abstract memory store interface (V1 placeholder).
+            tool_executor: ToolExecutor service managing tool execution pipeline.
+            conversation_manager: ConversationManager for multi-turn history.
+            tts_service: Optional TTSService handling audio output.
+            memory_store: Optional abstract memory store interface.
         """
         self._llm = llm_provider
         self._tools = tool_registry
-        self._voice = voice_manager
+        self._tool_executor = tool_executor or ToolExecutor(registry=tool_registry)
+        self._conversation_manager = conversation_manager or ConversationManager(llm_provider=llm_provider)
+        self._tts = tts_service
         self._memory = memory_store
 
         logger.info(
@@ -63,75 +69,53 @@ class SystemOrchestrator:
             len(self._tools),
         )
 
-    def process_command(self, user_input: str) -> CommandResult:
+    def process(self, user_input: str) -> AssistantResponse:
         """Orchestrates processing of raw user text or transcribed speech input.
 
         Args:
-            user_input: Raw text command from user or speech-to-text.
+            user_input: Raw text command from user interface.
 
         Returns:
-            CommandResult containing execution success state and text response.
+            AssistantResponse containing text, tool_calls, should_speak flag, and execution status.
         """
         logger.info("Processing command input: '%s'", user_input)
         clean_input = user_input.strip()
 
         if not clean_input:
-            return CommandResult(
+            return AssistantResponse(
+                text="I did not receive any input.",
+                should_speak=False,
                 success=False,
-                response_text="I did not receive any input.",
-                error_message="Empty input provided",
+                error="Empty input provided",
             )
 
-        # Step 1: Parse intent via AI provider (or tool keyword matching strategy)
-        intent: UserIntent = self._parse_intent(clean_input)
+        # 1. Fetch available tool metadata schemas for AI provider
+        available_tool_schemas = self._tools.get_available_tools()
 
-        # Step 2: Route according to intent type
-        if intent.intent_type == "tool_call" and intent.tool_name:
-            tool_result = self._tools.execute_tool(intent.tool_name, intent.parameters)
-            response_text = tool_result.message
-
-            # Speak output if voice manager is active
-            if self._voice:
-                self._voice.speak(response_text)
-
-            return CommandResult(
-                success=tool_result.success,
-                response_text=response_text,
-                data=tool_result.data,
-                error_message=tool_result.error,
-            )
-
-        # Step 3: Default conversational response via LLM
-        llm_response = self._llm.generate_response(clean_input)
-
-        if self._voice:
-            self._voice.speak(llm_response)
-
-        return CommandResult(
-            success=True,
-            response_text=llm_response,
-            data={"intent": "conversation"},
+        # 2. Query AI provider & ConversationManager for intent & tool call decisions
+        initial_response: AssistantResponse = self._conversation_manager.generate_response(
+            user_prompt=clean_input,
+            available_tools=available_tool_schemas,
         )
 
-    def _parse_intent(self, text: str) -> UserIntent:
-        """Internal helper mapping user query to structured intent.
+        # 3. Check if response contains tool execution decisions
+        if initial_response.tool_calls:
+            logger.info("Orchestrator detected %d tool call requests", len(initial_response.tool_calls))
+            
+            # Execute tool calls via isolated ToolExecutor service
+            tool_results: list[ToolResult] = self._tool_executor.execute_tool_calls(initial_response.tool_calls)
+            
+            # Send tool execution results back to AI provider to generate final natural language summary
+            final_response = self._conversation_manager.generate_final_response(tool_results)
+            final_response.tool_calls = initial_response.tool_calls
 
-        In V1.0, checks tool registry keyword triggers before falling back to LLM conversation.
-        """
-        lowered = text.lower()
+            if self._tts and final_response.should_speak:
+                self._tts.speak(final_response.text)
 
-        # Simple deterministic intent routing for V1 foundation tools
-        for tool_name in self._tools.list_tools():
-            tool = self._tools.get_tool(tool_name)
-            if tool and tool.can_handle(lowered):
-                return UserIntent(
-                    raw_text=text,
-                    intent_type="tool_call",
-                    tool_name=tool_name,
-                    parameters={"query": text},
-                )
+            return final_response
 
-        return UserIntent(
-            raw_text=text,
-            intent_type="conversation",
-        )
+        # 4. Standard conversational response without tool execution
+        if self._tts and initial_response.should_speak:
+            self._tts.speak(initial_response.text)
+
+        return initial_response

@@ -1,29 +1,39 @@
 """
-JARVIS Voice Module Package Initialization.
+JARVIS Voice Package Initialization.
 
 1. Why this module exists:
-   Exposes speech engine interfaces and VoiceManager for managing audio lifecycle.
-
-2. How it fits into the architecture:
-   Isolates voice hardware/software interfaces from core reasoning logic.
-
-3. Which future modules will interact with it:
-   - `backend.services.speech_service`
-   - `backend.core.orchestrator`
-
-4. Common mistakes to avoid:
-   - Coupling speech recognition libraries directly into core orchestrator code.
-
-5. Possible future improvements:
-   - Streaming audio byte generators for real-time voice conversations.
+   Exposes speech interfaces, concrete providers, VoiceManager, TTSService, and WakeWord detectors.
 """
 
-from backend.voice.base import BaseSpeechToText, BaseTextToSpeech, BaseWakeWordDetector
+from backend.voice.base import (
+    BaseSpeechToText,
+    BaseTextToSpeech,
+    BaseWakeWordDetector,
+    SpeechToTextProvider,
+    TextToSpeechProvider,
+)
 from backend.voice.manager import VoiceManager
+from backend.voice.providers import (
+    FasterWhisperProvider,
+    MockSTTProvider,
+    MockTTSProvider,
+    Pyttsx3Provider,
+)
+from backend.voice.service import TTSService
+from backend.voice.wake_word import MockWakeWordDetector, OpenWakeWordDetector
 
 __all__ = [
+    "SpeechToTextProvider",
+    "TextToSpeechProvider",
     "BaseSpeechToText",
     "BaseTextToSpeech",
     "BaseWakeWordDetector",
     "VoiceManager",
+    "Pyttsx3Provider",
+    "MockTTSProvider",
+    "FasterWhisperProvider",
+    "MockSTTProvider",
+    "OpenWakeWordDetector",
+    "MockWakeWordDetector",
+    "TTSService",
 ]
