@@ -93,7 +93,12 @@ class OpenWakeWordDetector(BaseWakeWordDetector):
 
             try:
                 while True:
-                    data = stream.read(chunk_size, exception_on_overflow=False)
+                    try:
+                        data = stream.read(chunk_size, exception_on_overflow=False)
+                    except IOError as io_err:
+                        logger.warning("PyAudio buffer overflow during wake word listening (recovered): %s", io_err)
+                        continue
+
                     audio_chunk = np.frombuffer(data, dtype=np.int16)
 
                     # Predict score for current audio chunk

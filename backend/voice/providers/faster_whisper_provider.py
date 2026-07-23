@@ -102,8 +102,12 @@ class FasterWhisperProvider(SpeechToTextProvider):
             frames = []
             num_chunks = int(rate / chunk * duration)
             for _ in range(num_chunks):
-                data = stream.read(chunk, exception_on_overflow=False)
-                frames.append(data)
+                try:
+                    data = stream.read(chunk, exception_on_overflow=False)
+                    frames.append(data)
+                except IOError as io_err:
+                    logger.warning("PyAudio buffer overflow during STT capture (recovered): %s", io_err)
+                    continue
 
             stream.stop_stream()
             stream.close()

@@ -18,6 +18,22 @@ JARVIS Memory Interfaces Package.
    - Semantic RAG search and episodic session store interfaces.
 """
 
-from backend.memory.base import BaseMemoryStore
+from backend.memory.base import BaseMemoryStore, PipelineMemoryStore
+from backend.memory.models import ExtractedMemory, MemoryItem
+from backend.memory.pre_filter import MemoryPreFilter
+from backend.memory.extractor import MemoryExtractor
+from backend.memory.summarizer import MemorySummarizer
+from backend.memory.manager import MemoryManager
+from backend.memory.pipeline import MemoryPipeline
 
-__all__ = ["BaseMemoryStore"]
+__all__ = [
+    "BaseMemoryStore",
+    "PipelineMemoryStore",
+    "ExtractedMemory",
+    "MemoryItem",
+    "MemoryPreFilter",
+    "MemoryExtractor",
+    "MemorySummarizer",
+    "MemoryManager",
+    "MemoryPipeline",
+]

@@ -164,6 +164,7 @@ class StartupManager:
                 tts_service=tts_service,
                 listen_timeout=settings.listen_timeout,
                 post_response_timeout=settings.post_response_timeout,
+                cooldown_seconds=settings.voice_cooldown_seconds,
             )
             logger.info("[OK] Ready (AI Provider: %s)", llm_provider.provider_name)
 

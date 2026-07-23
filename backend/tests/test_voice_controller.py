@@ -30,7 +30,7 @@ class TestVoiceController(unittest.TestCase):
             orchestrator=self.orchestrator,
             stt_provider=self.stt,
             tts_service=self.tts,
-            listening_duration=1.0,
+            max_cycles=1,
         )
 
     def test_voice_controller_single_cycle_flow(self) -> None:
@@ -51,6 +51,7 @@ class TestVoiceController(unittest.TestCase):
             orchestrator=self.orchestrator,
             stt_provider=empty_stt,
             tts_service=self.tts,
+            max_cycles=1,
         )
 
         with patch("builtins.input", side_effect=["", "exit"]):
@@ -66,6 +67,7 @@ class TestVoiceController(unittest.TestCase):
             orchestrator=self.orchestrator,
             stt_provider=failing_stt,
             tts_service=self.tts,
+            max_cycles=1,
         )
 
         with patch("builtins.input", side_effect=["", "exit"]):
@@ -82,6 +84,7 @@ class TestVoiceController(unittest.TestCase):
             orchestrator=self.orchestrator,
             stt_provider=self.stt,
             tts_service=failing_tts,
+            max_cycles=1,
         )
 
         with patch("builtins.input", side_effect=["", "exit"]):

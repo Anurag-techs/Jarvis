@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     wakeword_sensitivity: float = Field(default=0.5, description="Wake word detection threshold (0.0 to 1.0)")
     listen_timeout: float = Field(default=8.0, description="Active listening duration in seconds")
     post_response_timeout: float = Field(default=5.0, description="Continuous follow-up listening window duration in seconds")
+    voice_cooldown_seconds: float = Field(default=1.0, description="Post-TTS cooldown pause in seconds")
 
     def get_ai_config(self) -> AIConfig:
         """Constructs an AIConfig model from current settings."""
