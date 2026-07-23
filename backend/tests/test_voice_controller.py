@@ -31,6 +31,7 @@ class TestVoiceController(unittest.TestCase):
             stt_provider=self.stt,
             tts_service=self.tts,
             max_cycles=1,
+            max_conversation_turns=1,  # Bounds inner loop so tests don't run forever
         )
 
     def test_voice_controller_single_cycle_flow(self) -> None:
@@ -52,6 +53,7 @@ class TestVoiceController(unittest.TestCase):
             stt_provider=empty_stt,
             tts_service=self.tts,
             max_cycles=1,
+            max_conversation_turns=1,
         )
 
         with patch("builtins.input", side_effect=["", "exit"]):
@@ -68,6 +70,7 @@ class TestVoiceController(unittest.TestCase):
             stt_provider=failing_stt,
             tts_service=self.tts,
             max_cycles=1,
+            max_conversation_turns=1,
         )
 
         with patch("builtins.input", side_effect=["", "exit"]):
@@ -85,6 +88,7 @@ class TestVoiceController(unittest.TestCase):
             stt_provider=self.stt,
             tts_service=failing_tts,
             max_cycles=1,
+            max_conversation_turns=1,
         )
 
         with patch("builtins.input", side_effect=["", "exit"]):

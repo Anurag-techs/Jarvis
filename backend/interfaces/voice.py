@@ -41,6 +41,7 @@ class VoiceController:
         post_response_timeout: float = 5.0,
         cooldown_seconds: float = 1.0,
         max_cycles: int | None = None,
+        max_conversation_turns: int | None = None,
     ) -> None:
         """Initialize VoiceController via dependency injection.
 
@@ -52,7 +53,8 @@ class VoiceController:
             listen_timeout: Duration in seconds for active speech recording.
             post_response_timeout: Duration in seconds for follow-up listening window.
             cooldown_seconds: Duration in seconds to pause post-TTS before enabling STT.
-            max_cycles: Optional loop iteration cap (used for testing).
+            max_cycles: Optional outer-loop iteration cap (used for testing).
+            max_conversation_turns: Optional inner conversation-loop turn cap (used for testing).
         """
         self._orchestrator = orchestrator
         self._stt = stt_provider
@@ -62,6 +64,7 @@ class VoiceController:
         self._post_response_timeout = post_response_timeout
         self._cooldown_seconds = cooldown_seconds
         self._max_cycles = max_cycles
+        self._max_conversation_turns = max_conversation_turns
 
     def start(self) -> None:
         """Starts the hands-free continuous voice state machine."""
@@ -118,8 +121,12 @@ class VoiceController:
     def _run_conversation_loop(self) -> None:
         """Executes active conversation loop including post-TTS cooldown and follow-up window until silence."""
         in_followup = False
+        turn_count = 0
 
         while True:
+            if self._max_conversation_turns is not None and turn_count >= self._max_conversation_turns:
+                logger.info("Reached maximum conversation turns (%d). Returning to Standby.", self._max_conversation_turns)
+                break
             duration = self._post_response_timeout if in_followup else self._listen_timeout
             prompt_label = "[Follow-up listening (5s)...]" if in_followup else "[Listening...]"
 
@@ -185,6 +192,7 @@ class VoiceController:
 
             # Transition into continuous follow-up window
             in_followup = True
+            turn_count += 1
 
     def _apply_cooldown(self) -> None:
         """Internal helper applying post-TTS microphone cooldown pause to prevent feedback loops."""

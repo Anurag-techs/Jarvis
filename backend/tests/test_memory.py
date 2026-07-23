@@ -51,7 +51,7 @@ class TestMemoryComponents(unittest.TestCase):
         self.assertEqual(self.pre_filter.calculate_confidence("The weather in Tokyo is very rainy today."), 0.0)
 
         # Keyword and first-person should combine (0.5 for keyword + 0.3 for first-person = 0.8)
-        self.assertAlmostEqual(self.pre_filter.calculate_confidence("remember that my sister's name is Sarah"), 0.8)
+        self.assertAlmostEqual(self.pre_filter.calculate_confidence("remember that my sister is Sarah"), 0.8)
         
         # Heuristics (0.3 first-person + 0.3 preference = 0.6)
         self.assertAlmostEqual(self.pre_filter.calculate_confidence("i prefer drinking black coffee in the morning"), 0.6)

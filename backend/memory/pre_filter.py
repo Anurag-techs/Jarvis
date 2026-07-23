@@ -24,15 +24,15 @@ class MemoryPreFilter:
             re.IGNORECASE
         )
 
-        # First-person statements/possessives (I am, my name is, I live, I prefer, my favorite)
+        # First-person statements/possessives (I, my, me, mine, myself)
         self._first_person_pattern = re.compile(
-            r"\b(my|i|me|mine|myself)\b\s+(is|am|prefer|like|dislike|live|work|have|want|favorite|name)\b",
+            r"\b(my|i|me|mine|myself)\b",
             re.IGNORECASE
         )
 
-        # Preference and identity patterns (live in, work at, like to, dislike, hobby, job, favorite)
+        # Preference and identity patterns (live in, work at, like to, dislike, hobby, job, favorite, prefer)
         self._preference_pattern = re.compile(
-            r"\b(live in|work at|likes? to|dislikes?|hobbies|hobby|occupation|favorite|preference)\b",
+            r"\b(live in|work at|likes? to|dislikes?|hobbies|hobby|occupation|favorite|preference|prefer|name|study|studies|am|likes?)\b",
             re.IGNORECASE
         )
 

@@ -67,6 +67,19 @@ class BaseLLMProvider(ABC):
         completion = self.generate_completion(user_prompt, system_prompt, history)
         return completion.text
 
+    @abstractmethod
+    def generate_raw_completion(
+        self,
+        user_prompt: str,
+        system_prompt: str | None = None,
+        response_mime_type: str = "text/plain",
+    ) -> str:
+        """Generates raw text response directly from the AI provider.
+
+        Useful for system-internal requests like memory extraction, consolidation, etc.,
+        where standard AssistantResponse packaging or tool calls are not desired.
+        """
+
 
 class MockLLMProvider(BaseLLMProvider):
     """Mock LLM Provider returning structured AssistantResponse for testing and offline fallback."""
@@ -99,6 +112,21 @@ class MockLLMProvider(BaseLLMProvider):
         logger.debug("MockLLMProvider generating completion for user prompt: '%s'", user_prompt)
         lowered = user_prompt.strip().lower()
 
+        # Synthesis pass: tool result prompts must never be returned verbatim to the user.
+        # ConversationManager.generate_final_response() sends "Tool Execution Results:\n- <msg>\n\nSynthesize..."
+        # The MockLLMProvider must consume this and produce a clean natural-language reply.
+        if user_prompt.strip().startswith("Tool Execution Results"):
+            # Extract the first result bullet as a concise summary
+            lines = user_prompt.splitlines()
+            result_lines = [l.lstrip("- ").strip() for l in lines if l.strip().startswith("-")]
+            summary = result_lines[0] if result_lines else "I've completed the requested action."
+            return AssistantResponse(
+                text=summary,
+                tool_calls=[],
+                should_speak=True,
+                success=True,
+            )
+
         # Handle tool call decision matching for foundation testing
         if "weather" in lowered:
             location = "London"
@@ -130,3 +158,39 @@ class MockLLMProvider(BaseLLMProvider):
             tool_calls=[],
             should_speak=True,
         )
+
+    def generate_raw_completion(
+        self,
+        user_prompt: str,
+        system_prompt: str | None = None,
+        response_mime_type: str = "text/plain",
+    ) -> str:
+        logger.debug("MockLLMProvider generating raw completion for user prompt: '%s'", user_prompt)
+        lowered = user_prompt.lower()
+        if "user input:" in lowered and "assistant response:" in lowered:
+            # Deterministic memory extraction for test simulations
+            extracted = []
+            if "my name is" in lowered:
+                parts = user_prompt.split("my name is")
+                if len(parts) > 1:
+                    name = parts[1].split("\n")[0].strip("? .!").title()
+                    extracted.append({
+                        "content": f"User's name is {name}.",
+                        "importance": 5.0,
+                        "source": "user",
+                        "metadata": {"category": "user_profile"}
+                    })
+            elif "i study" in lowered:
+                parts = user_prompt.split("i study")
+                if len(parts) > 1:
+                    subject = parts[1].split("\n")[0].strip("? .!")
+                    extracted.append({
+                        "content": f"User studies {subject}.",
+                        "importance": 4.0,
+                        "source": "user",
+                        "metadata": {"category": "user_profile"}
+                    })
+            return json.dumps(extracted)
+
+        return "Mock raw response."
+

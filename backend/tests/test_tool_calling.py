@@ -62,6 +62,26 @@ class TestToolCallingPipeline(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].tool, "get_weather")
         self.assertIn("Paris", response.text)
 
+    def test_synthesis_response_never_leaks_internal_prompt(self) -> None:
+        """Verifies that the final user response never contains the raw synthesis prompt text.
+
+        The ConversationManager sends an internal 'Tool Execution Results: ...' prompt to the
+        LLM to produce the final reply. The LLM response must never contain that prefix.
+        """
+        response = self.orchestrator.process("What is the weather in London?")
+        self.assertIsInstance(response, AssistantResponse)
+        # The response text must never start with the internal synthesis prompt header
+        self.assertFalse(
+            response.text.startswith("Tool Execution Results"),
+            msg=f"Internal synthesis prompt leaked into response: {response.text[:80]!r}",
+        )
+        # Must also not contain the internal 'Synthesize' instruction text
+        self.assertNotIn(
+            "Synthesize",
+            response.text,
+            msg=f"Internal synthesis instruction leaked into response: {response.text[:120]!r}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

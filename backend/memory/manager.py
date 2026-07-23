@@ -102,12 +102,35 @@ class MemoryManager:
         query_words = set(clean_query.split())
         scored_items: list[tuple[float, MemoryItem]] = []
 
+        def _word_match(w1: str, w2: str) -> bool:
+            w1_clean = w1.strip("?.!,;:\"'").lower()
+            w2_clean = w2.strip("?.!,;:\"'").lower()
+            if not w1_clean or not w2_clean:
+                return False
+            if w1_clean == w2_clean:
+                return True
+            # Prefix stemming for words with length >= 4 (e.g. study and studies both map to stud)
+            if len(w1_clean) >= 4 and len(w2_clean) >= 4:
+                return w1_clean[:4] == w2_clean[:4]
+            return False
+
         for item in self._store.values():
+            # Filter out deleted and expired items
+            if getattr(item, "is_deleted", False):
+                continue
+            if getattr(item, "expires_at", None) and item.expires_at < datetime.now():
+                continue
+
             item_content_lower = item.content.lower()
             item_words = set(item_content_lower.split())
             
-            # Simple token overlap score
-            overlap_count = len(query_words.intersection(item_words))
+            # Simple token overlap score with prefix/stem matching
+            overlap_count = 0
+            for qw in query_words:
+                for iw in item_words:
+                    if _word_match(qw, iw):
+                        overlap_count += 1
+                        break
             
             # Exact substring match bonus
             substring_bonus = 0.0
@@ -117,8 +140,9 @@ class MemoryManager:
             # Factor in importance score slightly for keyword ranking (e.g. up to +0.5 bonus)
             importance_bonus = min(item.importance * 0.1, 0.5)
 
-            score = overlap_count + substring_bonus + importance_bonus
-            if score > 0:
+            match_score = overlap_count + substring_bonus
+            if match_score > 0:
+                score = match_score + importance_bonus
                 scored_items.append((score, item))
 
         # Sort by score descending, then by last_accessed_at descending

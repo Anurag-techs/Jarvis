@@ -65,6 +65,14 @@ class MemoryItem(BaseModel):
         default="user",
         description="Preserves where the memory originated (user, assistant, system)"
     )
+    expires_at: datetime | None = Field(
+        default=None,
+        description="Optional expiration timestamp for transient memories",
+    )
+    is_deleted: bool = Field(
+        default=False,
+        description="Flag indicating if the memory has been soft-deleted",
+    )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Flexible metadata storage for future categorization or source tracking",

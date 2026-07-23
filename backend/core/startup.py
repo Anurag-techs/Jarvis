@@ -137,9 +137,16 @@ class StartupManager:
             tool_executor = ToolExecutor(registry=registry)
             logger.info("[OK] %d tools registered & ToolExecutor ready", len(registry))
 
-            # Step 5: Initialize AI Provider & ConversationManager
-            logger.info("Initializing AI Provider & ConversationManager...")
+            # Step 5: Initialize AI Provider, Memory & ConversationManager
+            logger.info("Initializing AI Provider, Memory & ConversationManager...")
             llm_provider = self._create_llm_provider(settings)
+
+            # Initialize Memory components using Dependency Injection
+            from backend.memory import MemoryPipeline, PipelineMemoryStore, MemoryRecallService
+            memory_pipeline = MemoryPipeline(llm_provider=llm_provider)
+            memory_store = PipelineMemoryStore(pipeline=memory_pipeline)
+            recall_service = MemoryRecallService(memory_store=memory_store)
+
             system_prompt_provider = DefaultSystemPromptProvider(assistant_name=settings.assistant_name)
             conversation_manager = ConversationManager(
                 llm_provider=llm_provider,
@@ -156,6 +163,8 @@ class StartupManager:
                 tool_executor=tool_executor,
                 conversation_manager=conversation_manager,
                 tts_service=tts_service,
+                memory_store=memory_store,
+                recall_service=recall_service,
             )
             voice_controller = VoiceController(
                 orchestrator=orchestrator,
@@ -229,18 +238,57 @@ class StartupManager:
         return MockSTTProvider()
 
     def _create_llm_provider(self, settings: Settings) -> BaseLLMProvider:
-        """Creates target AI LLM provider using AIConfig."""
+        """Creates target AI LLM provider using AIConfig with transparent reason logging.
+
+        Selection priority:
+          1. If ``llm_provider`` is "gemini" AND ``gemini_api_key`` is present → GeminiProvider.
+          2. If ``llm_provider`` is "gemini" BUT key is missing → warn and fall back to Mock.
+          3. If ``llm_provider`` is "mock" (or anything else) → Mock (explicit or default).
+          4. If GeminiProvider raises during init (SDK error, bad key) → warn and fall back to Mock.
+        """
         ai_config = settings.get_ai_config()
-        if ai_config.provider.lower() == "gemini":
-            try:
-                return GeminiProvider(config=ai_config)
-            except JarvisError as err:
-                logger.warning(
-                    "GeminiProvider initialization failed (%s); falling back to MockLLMProvider",
-                    err.message,
-                )
-                return MockLLMProvider(model_name=ai_config.model_name)
-        return MockLLMProvider(model_name=ai_config.model_name)
+
+        # Always log the resolved configuration so startup is self-diagnosing
+        logger.info(
+            "Provider config: LLM_PROVIDER=%s | GEMINI_API_KEY set=%s | model=%s",
+            ai_config.provider,
+            bool(ai_config.api_key),
+            ai_config.model_name,
+        )
+
+        if ai_config.provider.lower() != "gemini":
+            logger.info(
+                "AI Provider: MockLLMProvider selected "
+                "(reason: LLM_PROVIDER is '%s', not 'gemini'). "
+                "Set LLM_PROVIDER=gemini in .env to use the real AI.",
+                ai_config.provider,
+            )
+            return MockLLMProvider(model_name=ai_config.model_name)
+
+        if not ai_config.api_key:
+            logger.warning(
+                "AI Provider: falling back to MockLLMProvider "
+                "(reason: LLM_PROVIDER=gemini but GEMINI_API_KEY is not set in .env). "
+                "Add your Gemini API key to enable real AI responses."
+            )
+            return MockLLMProvider(model_name=ai_config.model_name)
+
+        try:
+            provider = GeminiProvider(config=ai_config)
+            logger.info(
+                "AI Provider: GeminiProvider loaded successfully (model: %s).",
+                ai_config.model_name,
+            )
+            return provider
+        except JarvisError as err:
+            logger.warning(
+                "AI Provider: GeminiProvider initialization failed (%s); "
+                "falling back to MockLLMProvider.",
+                err.message,
+            )
+            return MockLLMProvider(model_name=ai_config.model_name)
+
+
 
     def _create_tts_provider(self, provider_name: str):
         """Creates target TTS provider instance with clean fallback."""

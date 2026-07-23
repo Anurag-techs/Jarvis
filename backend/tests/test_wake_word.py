@@ -47,7 +47,8 @@ class TestWakeWordAndContinuousListening(unittest.TestCase):
 
     def test_voice_controller_handsfree_wake_word_pipeline(self) -> None:
         """Verifies hands-free wake word -> active speech -> follow-up silence -> standby state transitions."""
-        stt = MockSTTProvider(default_transcript="hello")
+        stt = MagicMock()
+        stt.listen_and_transcribe.side_effect = ["hello", ""]
         wake_word = MockWakeWordDetector(trigger_sequence=[True])
 
         controller = VoiceController(

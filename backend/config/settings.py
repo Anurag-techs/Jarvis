@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     news_api_key: str | None = Field(default=None, description="NewsAPI Key")
 
     # AI Provider Configuration
-    llm_provider: str = Field(default="mock", description="Selected AI LLM Provider ('mock' or 'gemini')")
+    llm_provider: str = Field(default="gemini", description="Selected AI LLM Provider ('gemini' or 'mock')")
     llm_model: str = Field(default="gemini-2.5-flash", description="Model name identifier")
     gemini_api_key: str | None = Field(default=None, description="Google Gemini API Key")
     llm_api_key: str | None = Field(default=None, description="Generic LLM Provider API Key")
@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     listen_timeout: float = Field(default=8.0, description="Active listening duration in seconds")
     post_response_timeout: float = Field(default=5.0, description="Continuous follow-up listening window duration in seconds")
     voice_cooldown_seconds: float = Field(default=1.0, description="Post-TTS cooldown pause in seconds")
+    voice_mode: bool = Field(default=False, description="Default to hands-free voice interface mode on startup")
 
     def get_ai_config(self) -> AIConfig:
         """Constructs an AIConfig model from current settings."""

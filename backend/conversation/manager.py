@@ -77,20 +77,24 @@ class ConversationManager:
         logger.info("Cleared conversation history for session: %s", self.session_id)
 
     def generate_response(
-        self, user_prompt: str, available_tools: list[dict[str, Any]] | None = None
+        self,
+        user_prompt: str,
+        available_tools: list[dict[str, Any]] | None = None,
+        injected_prompt: str | None = None,
     ) -> AssistantResponse:
         """Processes user prompt, manages history context, calls LLM, and returns AssistantResponse.
 
         Args:
             user_prompt: Raw text query from user.
             available_tools: Optional tool metadata schemas.
+            injected_prompt: Optional context-injected prompt to send to LLM.
 
         Returns:
             AssistantResponse model containing text message and optional tool_calls.
         """
         logger.debug("ConversationManager processing prompt for session '%s'", self.session_id)
 
-        # 1. Store incoming user message
+        # 1. Store incoming user message (store the clean RAW prompt)
         self.add_user_message(user_prompt)
 
         # 2. Get system prompt instructions
@@ -100,8 +104,9 @@ class ConversationManager:
         history_dicts = self._build_prompt()
 
         # 4. Generate structured completion via LLM provider
+        target_prompt = injected_prompt if injected_prompt is not None else user_prompt
         response: AssistantResponse = self._llm.generate_completion(
-            user_prompt=user_prompt,
+            user_prompt=target_prompt,
             system_prompt=system_prompt,
             history=history_dicts,
             available_tools=available_tools,

@@ -22,16 +22,24 @@ JARVIS System Orchestrator.
 """
 
 import logging
+import traceback
 
 from backend.ai.provider import BaseLLMProvider
 from backend.conversation.manager import ConversationManager
+from backend.core.exceptions import ProviderError
 from backend.core.models import AssistantResponse, ToolResult, UserIntent
 from backend.memory.base import BaseMemoryStore
+from backend.memory.recall_service import MemoryRecallService
 from backend.tools.executor import ToolExecutor
 from backend.tools.registry import ToolRegistry
 from backend.voice.service import TTSService
 
 logger = logging.getLogger("jarvis.core.orchestrator")
+
+_PROVIDER_FALLBACK_MESSAGE: str = (
+    "I'm having trouble reaching the AI service right now. "
+    "Please try again in a moment."
+)
 
 
 class SystemOrchestrator:
@@ -45,6 +53,7 @@ class SystemOrchestrator:
         conversation_manager: ConversationManager | None = None,
         tts_service: TTSService | None = None,
         memory_store: BaseMemoryStore | None = None,
+        recall_service: MemoryRecallService | None = None,
     ) -> None:
         """Initialize orchestrator via constructor dependency injection.
 
@@ -55,6 +64,7 @@ class SystemOrchestrator:
             conversation_manager: ConversationManager for multi-turn history.
             tts_service: Optional TTSService handling audio output.
             memory_store: Optional abstract memory store interface.
+            recall_service: Optional memory recall service interface.
         """
         self._llm = llm_provider
         self._tools = tool_registry
@@ -62,6 +72,7 @@ class SystemOrchestrator:
         self._conversation_manager = conversation_manager or ConversationManager(llm_provider=llm_provider)
         self._tts = tts_service
         self._memory = memory_store
+        self._recall_service = recall_service
 
         logger.info(
             "SystemOrchestrator initialized with LLM: %s, Registered Tools: %d",
@@ -71,6 +82,10 @@ class SystemOrchestrator:
 
     def process(self, user_input: str) -> AssistantResponse:
         """Orchestrates processing of raw user text or transcribed speech input.
+
+        This method is guaranteed never to raise. All provider failures are caught,
+        logged with full stack traces, and returned as a friendly AssistantResponse
+        so the conversation loop stays alive.
 
         Args:
             user_input: Raw text command from user interface.
@@ -89,33 +104,89 @@ class SystemOrchestrator:
                 error="Empty input provided",
             )
 
-        # 1. Fetch available tool metadata schemas for AI provider
-        available_tool_schemas = self._tools.get_available_tools()
+        try:
+            # 1. Fetch available tool metadata schemas for AI provider
+            available_tool_schemas = self._tools.get_available_tools()
 
-        # 2. Query AI provider & ConversationManager for intent & tool call decisions
-        initial_response: AssistantResponse = self._conversation_manager.generate_response(
-            user_prompt=clean_input,
-            available_tools=available_tool_schemas,
-        )
+            # 2. Build context using MemoryRecallService (if available)
+            injected_prompt = clean_input
+            if self._recall_service:
+                injected_prompt = self._recall_service.build_context(clean_input)
 
-        # 3. Check if response contains tool execution decisions
-        if initial_response.tool_calls:
-            logger.info("Orchestrator detected %d tool call requests", len(initial_response.tool_calls))
-            
-            # Execute tool calls via isolated ToolExecutor service
-            tool_results: list[ToolResult] = self._tool_executor.execute_tool_calls(initial_response.tool_calls)
-            
-            # Send tool execution results back to AI provider to generate final natural language summary
-            final_response = self._conversation_manager.generate_final_response(tool_results)
-            final_response.tool_calls = initial_response.tool_calls
+            # 3. Query AI provider & ConversationManager for intent & tool call decisions
+            initial_response: AssistantResponse = self._conversation_manager.generate_response(
+                user_prompt=clean_input,
+                available_tools=available_tool_schemas,
+                injected_prompt=injected_prompt,
+            )
 
-            if self._tts and final_response.should_speak:
-                self._tts.speak(final_response.text)
+            # 4. Check if response contains tool execution decisions
+            if initial_response.tool_calls:
+                logger.info("Orchestrator detected %d tool call requests", len(initial_response.tool_calls))
 
-            return final_response
+                # Execute tool calls via isolated ToolExecutor service
+                tool_results: list[ToolResult] = self._tool_executor.execute_tool_calls(initial_response.tool_calls)
 
-        # 4. Standard conversational response without tool execution
-        if self._tts and initial_response.should_speak:
-            self._tts.speak(initial_response.text)
+                # Send tool execution results back to AI provider to generate final natural language summary
+                final_response = self._conversation_manager.generate_final_response(tool_results)
+                final_response.tool_calls = initial_response.tool_calls
 
-        return initial_response
+                if self._tts and final_response.should_speak:
+                    self._tts.speak(final_response.text)
+
+                # Save interaction to memory store if present and response succeeded
+                if self._memory and final_response.success:
+                    try:
+                        self._memory.store_interaction(clean_input, final_response.text)
+                    except Exception as exc:
+                        logger.error("Failed to store interaction in memory: %s", exc, exc_info=True)
+
+                return final_response
+
+            # 5. Standard conversational response without tool execution
+            if self._tts and initial_response.should_speak:
+                self._tts.speak(initial_response.text)
+
+            # Save interaction to memory store if present and response succeeded
+            if self._memory and initial_response.success:
+                try:
+                    self._memory.store_interaction(clean_input, initial_response.text)
+                except Exception as exc:
+                    logger.error("Failed to store interaction in memory: %s", exc, exc_info=True)
+
+            return initial_response
+
+        except ProviderError as exc:
+            # Safety net: GeminiProvider should already return a friendly AssistantResponse
+            # on exhausted retries, but this catches any provider errors that still escape
+            # (e.g. from ConversationManager internals or tool synthesis calls).
+            logger.error(
+                "ProviderError escaped into orchestrator for input=%r — "
+                "returning friendly fallback. Error: %s\n%s",
+                clean_input[:80],
+                exc.message,
+                traceback.format_exc(),
+            )
+            return AssistantResponse(
+                text=_PROVIDER_FALLBACK_MESSAGE,
+                tool_calls=[],
+                should_speak=True,
+                success=False,
+                error=exc.message,
+            )
+        except Exception as exc:
+            # Catch-all for unexpected non-provider failures (e.g. tool execution bugs)
+            logger.error(
+                "Unexpected orchestrator error for input=%r: %s\n%s",
+                clean_input[:80],
+                exc,
+                traceback.format_exc(),
+            )
+            return AssistantResponse(
+                text="Something unexpected happened. Please try again.",
+                tool_calls=[],
+                should_speak=True,
+                success=False,
+                error=str(exc),
+            )
+

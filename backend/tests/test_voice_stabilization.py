@@ -40,12 +40,14 @@ class TestVoiceStabilization(unittest.TestCase):
             post_response_timeout=0.1,
             cooldown_seconds=0.01,
             max_cycles=1,
+            max_conversation_turns=1,  # Bound inner loop: MockSTTProvider always returns "hello"
         )
 
         with patch("time.sleep") as mock_sleep:
             controller.start()
             # Verify cooldown sleep called with 0.01s
             mock_sleep.assert_any_call(0.01)
+
 
     def test_followup_silence_returns_immediately_to_standby(self) -> None:
         """Verifies follow-up mode exits immediately to Standby on silent transcript without repeating."""
@@ -77,6 +79,7 @@ class TestVoiceStabilization(unittest.TestCase):
         mock_pyaudio_module.PyAudio.return_value = mock_audio_instance
         mock_pyaudio_module.paInt16 = 1
         mock_audio_instance.open.return_value = mock_stream_instance
+        mock_audio_instance.get_sample_size.return_value = 2
 
         # Simulate buffer overflow IOError on stream.read
         mock_stream_instance.read.side_effect = [IOError("Input overflowed"), b"\x00" * 2560]

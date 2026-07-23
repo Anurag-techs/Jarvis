@@ -54,20 +54,20 @@ class MemoryExtractor:
             "- 'source': the origin of the memory. Must be one of 'user', 'assistant', or 'system'\n"
             "- 'metadata': a dictionary containing tags, category, or other relevant context.\n\n"
             "If no memorable facts are present, output an empty JSON list [].\n"
-            "You must return ONLY the valid JSON list in the 'message' field of your response format."
+            "You must return ONLY the valid JSON list. Do not wrap it in any other JSON fields or envelope."
         )
 
         prompt = f"User Input: {user_input}\nAssistant Response: {assistant_response}"
 
         try:
-            response = self.llm_provider.generate_completion(
-                user_prompt=prompt, system_prompt=system_prompt
+            raw_response = self.llm_provider.generate_raw_completion(
+                user_prompt=prompt, system_prompt=system_prompt, response_mime_type="application/json"
             )
-            if not response.success or not response.text:
+            if not raw_response:
                 return []
 
-            # Try parsing the text response from message field
-            text_to_parse = response.text.strip()
+            # Try parsing the raw text response
+            text_to_parse = raw_response.strip()
             
             # Handle potential markdown code block formatting in LLM output
             if text_to_parse.startswith("```json"):
@@ -82,7 +82,7 @@ class MemoryExtractor:
                 if isinstance(memories_data, dict):
                     memories_data = [memories_data]
                 else:
-                    logger.warning("Parsed LLM output is not a list or dictionary: %s", response.text)
+                    logger.warning("Parsed LLM output is not a list or dictionary: %s", raw_response)
                     return []
 
             extracted: list[ExtractedMemory] = []
@@ -126,7 +126,7 @@ class MemoryExtractor:
                     )
                 )
 
-        if "i live in" in lowered:
+        elif "i live in" in lowered:
             parts = user_input.split("i live in")
             if len(parts) > 1:
                 location = parts[1].strip("? .!").title()
@@ -139,7 +139,20 @@ class MemoryExtractor:
                     )
                 )
 
-        if "i like" in lowered:
+        elif "i study" in lowered:
+            parts = user_input.split("i study")
+            if len(parts) > 1:
+                subject = parts[1].strip("? .!")
+                extracted.append(
+                    ExtractedMemory(
+                        content=f"User studies {subject}.",
+                        importance=4.0,
+                        source="user",
+                        metadata={"category": "user_profile"}
+                    )
+                )
+
+        elif "i like" in lowered:
             parts = user_input.split("i like")
             if len(parts) > 1:
                 preference = parts[1].strip("? .!")
@@ -152,7 +165,7 @@ class MemoryExtractor:
                     )
                 )
 
-        if "remember that" in lowered:
+        elif "remember that" in lowered:
             parts = user_input.split("remember that")
             if len(parts) > 1:
                 fact = parts[1].strip("? .!")
