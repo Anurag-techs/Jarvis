@@ -49,16 +49,58 @@ _TRANSIENT_STATUS_CODES: frozenset[str] = frozenset({"429", "500", "502", "503",
 _TRANSIENT_SUBSTRINGS: tuple[str, ...] = (
     "unavailable",
     "overloaded",
-    "quota",
-    "rate limit",
     "timeout",
     "timed out",
     "connection",
     "reset by peer",
     "temporarily",
     "try again",
-    "resource exhausted",
 )
+
+# Quota / rate-limit errors — fast-fail, do NOT retry (retrying wastes time and quota)
+_QUOTA_SUBSTRINGS: tuple[str, ...] = (
+    "quota",
+    "rate limit",
+    "resource exhausted",
+    "resource_exhausted",
+    "ratequotaexceeded",
+    "daily limit",
+    "per-minute",
+)
+_QUOTA_STATUS_CODES: frozenset[int] = frozenset({429})
+
+_QUOTA_FRIENDLY_MESSAGE: str = (
+    "I've reached my AI request limit. Please wait a moment and try again."
+)
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    """Returns True if the exception is a quota / rate-limit error.
+
+    These must NOT be retried — retrying wastes time and doesn't help.
+    Fast-fail immediately with a user-friendly message.
+    """
+    curr = exc
+    while curr is not None:
+        try:
+            import google.genai.errors as genai_errors
+            if isinstance(curr, genai_errors.APIError):
+                if curr.code in _QUOTA_STATUS_CODES:
+                    return True
+        except ImportError:
+            pass
+
+        lowered = str(curr).lower()
+        if any(phrase in lowered for phrase in _QUOTA_SUBSTRINGS):
+            return True
+
+        if getattr(curr, "__cause__", None) is not None:
+            curr = curr.__cause__
+        elif getattr(curr, "__context__", None) is not None:
+            curr = curr.__context__
+        else:
+            break
+    return False
 
 
 def _is_transient_error(exc: Exception) -> bool:
@@ -136,26 +178,62 @@ class GeminiProvider(BaseLLMProvider):
         if not config.api_key:
             raise ProviderError(
                 message="Google Gemini API key is unconfigured. Set GEMINI_API_KEY in .env file.",
-                details={"provider": "gemini", "model": self._model_name},
+                details={"provider": "gemini", "model": self._model_name, "error_type": "ConfigurationError"},
             )
 
         try:
-            import google.genai as genai  # Deferred import for clean SDK loading
+            # Attempt to import the google-genai SDK
+            import google.genai as genai
+        except ImportError as exc:
+            # Differentiate: SDK not installed vs. sub-dependency import error (e.g. missing _cffi_backend)
+            missing_module = getattr(exc, "name", None)
+            if missing_module and not missing_module.startswith(("google", "google-genai")):
+                logger.error(
+                    "google-genai SDK dependency import error (missing: %s): %s",
+                    missing_module, exc, exc_info=True
+                )
+                raise ProviderError(
+                    message=(
+                        f"google-genai SDK is installed, but a dependency failed to load "
+                        f"(missing module: {missing_module}). Original error: {exc}"
+                    ),
+                    details={
+                        "provider": "gemini",
+                        "model": self._model_name,
+                        "error_type": "DependencyImportError",
+                        "missing_module": missing_module
+                    },
+                ) from exc
+            else:
+                logger.error("google-genai SDK is not installed: %s", exc, exc_info=True)
+                raise ProviderError(
+                    message=(
+                        "google-genai SDK is not installed. "
+                        "Run: pip install google-genai>=1.0.0"
+                    ),
+                    details={
+                        "provider": "gemini",
+                        "model": self._model_name,
+                        "error_type": "SDKNotInstalled"
+                    },
+                ) from exc
 
+        try:
             # Single client initialization reused across all requests
             self._client = genai.Client(api_key=config.api_key)
-        except ImportError as exc:
-            raise ProviderError(
-                message=(
-                    "google-genai SDK is not installed. "
-                    "Run: pip install google-genai>=1.0.0"
-                ),
-                details={"provider": "gemini", "model": self._model_name},
-            ) from exc
         except Exception as exc:
+            error_type = "SDKClientInitError"
+            msg = str(exc).lower()
+            if "key" in msg or "auth" in msg or "credential" in msg:
+                error_type = "AuthenticationError"
+            logger.error("Failed to initialize Google GenAI SDK client: %s", exc, exc_info=True)
             raise ProviderError(
                 message=f"Failed to initialize Google GenAI SDK client: {exc}",
-                details={"provider": "gemini", "model": self._model_name},
+                details={
+                    "provider": "gemini",
+                    "model": self._model_name,
+                    "error_type": error_type
+                },
             ) from exc
 
     @property
@@ -201,7 +279,21 @@ class GeminiProvider(BaseLLMProvider):
                 return self._call_api(user_prompt, system_prompt, available_tools)
 
             except ProviderError as exc:
-                # Only retry transient ProviderErrors (those wrapping 503/timeout/etc.)
+                # ── Quota errors: fast-fail, never retry ────────────────────
+                if _is_quota_error(exc):
+                    logger.warning(
+                        "Gemini quota/rate-limit error — fast-failing immediately (no retries): %s",
+                        exc.message,
+                    )
+                    return AssistantResponse(
+                        text=_QUOTA_FRIENDLY_MESSAGE,
+                        tool_calls=[],
+                        should_speak=True,
+                        success=False,
+                        error=exc.message,
+                    )
+
+                # ── Only retry transient ProviderErrors (503/timeout/etc.) ──
                 if not _is_transient_error(exc):
                     # Permanent error (e.g. invalid key, malformed request) — fail fast
                     logger.error(
@@ -270,9 +362,38 @@ class GeminiProvider(BaseLLMProvider):
         except ProviderError:
             raise
         except Exception as exc:
+            error_type = "APIError"
+            message = str(exc)
+            
+            try:
+                import google.genai.errors as genai_errors
+                if isinstance(exc, genai_errors.APIError):
+                    if exc.code in (401, 403) or "key" in message.lower() or "auth" in message.lower():
+                        error_type = "AuthenticationError"
+                    elif exc.code == 404 or "not found" in message.lower() or "model" in message.lower():
+                        error_type = "InvalidModelError"
+            except ImportError:
+                pass
+
+            if error_type == "APIError":
+                lowered_msg = message.lower()
+                if "key" in lowered_msg or "auth" in lowered_msg or "credential" in lowered_msg:
+                    error_type = "AuthenticationError"
+                elif "model" in lowered_msg or "not found" in lowered_msg:
+                    error_type = "InvalidModelError"
+
+            logger.error(
+                "Gemini AI generation failed (type=%s): %s",
+                error_type, exc, exc_info=True
+            )
             raise ProviderError(
                 message=f"Gemini AI generation failed: {exc}",
-                details={"provider": "gemini", "model": self._model_name, "prompt": user_prompt},
+                details={
+                    "provider": "gemini",
+                    "model": self._model_name,
+                    "prompt": user_prompt,
+                    "error_type": error_type,
+                },
             ) from exc
 
     def _friendly_fallback(self, user_prompt: str, exc: Exception | None) -> AssistantResponse:
@@ -423,7 +544,36 @@ class GeminiProvider(BaseLLMProvider):
         except ProviderError:
             raise
         except Exception as exc:
+            error_type = "APIError"
+            message = str(exc)
+            
+            try:
+                import google.genai.errors as genai_errors
+                if isinstance(exc, genai_errors.APIError):
+                    if exc.code in (401, 403) or "key" in message.lower() or "auth" in message.lower():
+                        error_type = "AuthenticationError"
+                    elif exc.code == 404 or "not found" in message.lower() or "model" in message.lower():
+                        error_type = "InvalidModelError"
+            except ImportError:
+                pass
+
+            if error_type == "APIError":
+                lowered_msg = message.lower()
+                if "key" in lowered_msg or "auth" in lowered_msg or "credential" in lowered_msg:
+                    error_type = "AuthenticationError"
+                elif "model" in lowered_msg or "not found" in lowered_msg:
+                    error_type = "InvalidModelError"
+
+            logger.error(
+                "Gemini AI raw generation failed (type=%s): %s",
+                error_type, exc, exc_info=True
+            )
             raise ProviderError(
                 message=f"Gemini AI raw generation failed: {exc}",
-                details={"provider": "gemini", "model": self._model_name, "prompt": user_prompt},
+                details={
+                    "provider": "gemini",
+                    "model": self._model_name,
+                    "prompt": user_prompt,
+                    "error_type": error_type,
+                },
             ) from exc

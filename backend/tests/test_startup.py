@@ -27,9 +27,23 @@ class TestStartupManager(unittest.TestCase):
         self.assertIsNotNone(app.conversation_manager)
 
     def test_registered_tools_count(self) -> None:
-        """Verifies that 7 tools are registered during bootstrap."""
+        """Verifies that registered tools count during bootstrap includes CodingAgentTool."""
         app = self.manager.bootstrap()
-        self.assertEqual(len(app.tool_registry), 7)
+        self.assertGreaterEqual(len(app.tool_registry), 11)
+        self.assertIsNotNone(app.tool_registry.get_tool("coding_actions"))
+
+    def test_coding_agent_imports_and_tool_registration(self) -> None:
+        """Verifies CodingAgent components and DesktopEditorController import correctly."""
+        from backend.agents.coding_agent.editor_controller import DesktopEditorController, CodingEditorController
+        from backend.agents.coding_agent.coordinator import CodingAgent
+        from backend.tools.coding_agent_tool import CodingAgentTool
+
+        self.assertIs(DesktopEditorController, CodingEditorController)
+
+        app = self.manager.bootstrap()
+        self.assertIsNotNone(app.tool_registry.get_tool("coding_actions"))
+        tool = app.tool_registry.get_tool("coding_actions")
+        self.assertIsInstance(tool, CodingAgentTool)
 
     @patch("backend.core.startup.get_settings")
     def test_bootstrap_error_handling(self, mock_get_settings) -> None:

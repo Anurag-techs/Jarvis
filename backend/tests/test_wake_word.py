@@ -65,8 +65,8 @@ class TestWakeWordAndContinuousListening(unittest.TestCase):
         # Verify TTS spoken completion response
         self.assertIn("Hello! I am JARVIS.", self.mock_tts.spoken_messages)
 
-    def test_voice_controller_followup_continuous_conversation(self) -> None:
-        """Verifies continuous follow-up window processes consecutive speech commands without re-triggering wake word."""
+    def test_voice_controller_no_followup_returns_to_standby(self) -> None:
+        """Verifies FSM does not enter continuous follow-up window and returns to standby."""
         # STT returns speech on 1st call, follow-up speech on 2nd call, empty on 3rd call
         stt_mock = MagicMock()
         stt_mock.listen_and_transcribe.side_effect = ["hello", "what is your name", ""]
@@ -84,7 +84,7 @@ class TestWakeWordAndContinuousListening(unittest.TestCase):
 
         controller.start()
         self.assertIn("Hello! I am JARVIS.", self.mock_tts.spoken_messages)
-        self.assertIn("My name is JARVIS.", self.mock_tts.spoken_messages)
+        self.assertNotIn("My name is JARVIS.", self.mock_tts.spoken_messages)
 
     def test_voice_controller_recovers_from_wake_word_error(self) -> None:
         """Verifies state machine recovers gracefully when wake word detector encounters a driver error."""

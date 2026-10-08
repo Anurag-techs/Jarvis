@@ -33,11 +33,15 @@ def main() -> None:
             print(f"\n[Transcribed Text]: '{transcript}'")
             return
 
-        # Determine voice_mode flag from CLI arguments
-        voice_mode = "--voice" in args
+        # Determine console_mode flag from CLI arguments
+        console_mode = "--console" in args
 
         # Default application lifecycle run
-        app.run(voice_mode=voice_mode)
+        try:
+            app.run(console_mode=console_mode)
+        finally:
+            app.shutdown()
+
 
     except JarvisError as exc:
         print(f"CRITICAL: Failed to start JARVIS: {exc.message}", file=sys.stderr)

@@ -55,6 +55,7 @@ class Settings(BaseSettings):
 
     # Assistant Profile
     assistant_name: str = Field(default="JARVIS", description="Display name of assistant")
+    wake_acknowledgement: str = Field(default="Yes, Anurag sir.", description="Spoken TTS acknowledgement phrase when wake word is detected")
     wake_word: str = Field(default="jarvis", description="Wake word phrase for voice activation")
     conversation_history_limit: int = Field(default=20, description="Max conversation turn history limit")
 
@@ -69,6 +70,8 @@ class Settings(BaseSettings):
     llm_api_key: str | None = Field(default=None, description="Generic LLM Provider API Key")
     llm_temperature: float = Field(default=0.7, description="Generation temperature placeholder")
     llm_max_tokens: int = Field(default=1024, description="Max tokens placeholder")
+    ocr_provider: str = Field(default="easyocr", description="Selected OCR Provider ('easyocr' or 'mock')")
+    vision_provider: str = Field(default="gemini", description="Selected Vision Provider ('gemini' or 'mock')")
 
     # Voice Configuration Section Placeholder (Sprint 2.1 & Task 1)
     voice_provider: str = Field(default="pyttsx3", description="Selected TTS Provider")
@@ -80,11 +83,44 @@ class Settings(BaseSettings):
     stt_device: str = Field(default="cpu", description="Compute device for STT ('cpu' or 'cuda')")
     stt_compute_type: str = Field(default="int8", description="Quantization compute type ('int8', 'float16', 'float32')")
     wakeword_provider: str = Field(default="openwakeword", description="Selected wake word provider ('openwakeword' or 'mock')")
-    wakeword_sensitivity: float = Field(default=0.5, description="Wake word detection threshold (0.0 to 1.0)")
+    wakeword_sensitivity: float = Field(default=0.35, description="Wake word detection threshold (0.0 to 1.0)")
+    wakeword_rolling_window_size: int = Field(default=5, description="Number of prediction scores to keep in rolling window")
+    wakeword_min_consecutive_detections: int = Field(default=3, description="Minimum number of consecutive frames above lower threshold to trigger")
+    wakeword_cooldown_duration: float = Field(default=1.0, description="Cooldown duration in seconds after a trigger or reset")
+    wakeword_lower_threshold: float = Field(default=0.2, description="Lower threshold for consecutive detection checks")
     listen_timeout: float = Field(default=8.0, description="Active listening duration in seconds")
     post_response_timeout: float = Field(default=5.0, description="Continuous follow-up listening window duration in seconds")
     voice_cooldown_seconds: float = Field(default=1.0, description="Post-TTS cooldown pause in seconds")
     voice_mode: bool = Field(default=False, description="Default to hands-free voice interface mode on startup")
+    auto_install_dependencies: bool = Field(default=False, description="Automatically install missing voice dependencies on startup")
+
+    # Memory Configuration
+    memory_db_path: str = Field(default="instance/jarvis_memory.db", description="SQLite database path for memories")
+
+    # Voice Loop FSM Configuration
+    voice_speech_start_timeout: float = Field(default=8.0, description="Duration in seconds to wait for user to start speaking")
+    voice_silence_timeout: float = Field(default=2.0, description="Silence duration in seconds before stopping recording")
+    voice_silence_threshold: float = Field(default=500.0, description="RMS amplitude threshold below which audio is considered silent")
+    voice_beep_enabled: bool = Field(default=True, description="Enable beep sound acknowledgement when wake word is detected")
+    voice_beep_frequency: int = Field(default=1000, description="Acknowledgement beep sound frequency in Hz")
+    voice_beep_duration: int = Field(default=200, description="Acknowledgement beep sound duration in milliseconds")
+    voice_follow_up_timeout: float = Field(default=15.0, description="Duration in seconds to wait for follow-up speech")
+    voice_barge_in_enabled: bool = Field(default=False, description="Enable interruption/barge-in mode during speech output")
+    voice_pre_roll_buffer_ms: int = Field(default=500, description="Pre-roll audio buffer size in milliseconds")
+    voice_vad_threshold: float = Field(default=0.5, description="Silero VAD threshold for voice activity detection")
+    voice_summary_threshold: int = Field(default=100, description="Word count threshold above which responses are summarized for TTS")
+
+    # STT Confidence Gate — controls when transcripts are accepted, questioned, or rejected
+    stt_confidence_high: float = Field(
+        default=0.75,
+        description="Confidence >= this value: process normally. Range 0.0–1.0.",
+    )
+    stt_confidence_low: float = Field(
+        default=0.50,
+        description="Confidence >= this but < stt_confidence_high: ask for confirmation. Below this: reject and ask to repeat.",
+    )
+
+
 
     def get_ai_config(self) -> AIConfig:
         """Constructs an AIConfig model from current settings."""

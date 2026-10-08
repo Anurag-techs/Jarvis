@@ -26,6 +26,7 @@ from backend.memory.summarizer import MemorySummarizer
 from backend.memory.manager import MemoryManager
 from backend.memory.pipeline import MemoryPipeline
 from backend.memory.recall_service import MemoryRecallService
+from backend.memory.repository import BaseMemoryRepository, InMemoryMemoryRepository, SQLiteMemoryRepository
 
 __all__ = [
     "BaseMemoryStore",
@@ -38,4 +39,8 @@ __all__ = [
     "MemoryManager",
     "MemoryPipeline",
     "MemoryRecallService",
+    "BaseMemoryRepository",
+    "InMemoryMemoryRepository",
+    "SQLiteMemoryRepository",
 ]
+

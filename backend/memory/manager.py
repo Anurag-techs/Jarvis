@@ -19,22 +19,98 @@ from backend.memory.models import MemoryItem, SearchType
 logger = logging.getLogger("jarvis.memory.manager")
 
 
-class MemoryManager:
-    """Manages storage, retrieval, search, deletion, and cleanup of MemoryItems."""
+from backend.memory.models import MemoryItem, SearchType
+from backend.memory.repository import BaseMemoryRepository
 
-    def __init__(self) -> None:
-        """Initialize in-memory database store."""
+logger = logging.getLogger("jarvis.memory.manager")
+
+
+class MemoryManager:
+    """Manages storage, retrieval, search, deletion, and cleanup of MemoryItems using database persistence."""
+
+    def __init__(self, repository: BaseMemoryRepository | None = None) -> None:
+        """Initialize memory storage manager.
+
+        Args:
+            repository: Optional custom repository to inject. If None, resolves the
+                        SQLiteMemoryRepository with configured application settings.
+        """
+        if repository is None:
+            from backend.config.settings import get_settings
+            from backend.memory.repository import SQLiteMemoryRepository
+            settings = get_settings()
+            db_path = getattr(settings, "memory_db_path", "memory.db")
+            
+            # Check if running under tests (pytest or unittest) and overriding default path
+            import sys
+            import os
+            is_test = "pytest" in sys.modules or "unittest" in sys.modules or os.environ.get("TESTING") == "true"
+            if is_test and db_path == "instance/jarvis_memory.db":
+                db_path = ":memory:"
+                
+            self._repository: BaseMemoryRepository = SQLiteMemoryRepository(db_path=db_path)
+        else:
+            self._repository = repository
+
         self._store: dict[str, MemoryItem] = {}
+        self._load_memories()
+
+    def _load_memories(self) -> None:
+        """Loads non-deleted and non-expired memory items from the repository into memory cache."""
+        try:
+            active_items = self._repository.get_all(include_deleted=False, include_expired=False)
+            self._store = {item.id: item for item in active_items}
+            logger.info("Loaded %d active memories from repository on startup.", len(self._store))
+        except Exception as exc:
+            logger.error("Failed to auto-load memories on startup: %s", exc, exc_info=True)
+
+    def _find_by_content(self, content: str) -> MemoryItem | None:
+        """Finds an existing memory item with matching content (case-insensitive, normalized)."""
+        normalized_new = content.strip().lower()
+        # Check active store cache first
+        for item in self._store.values():
+            if item.content.strip().lower() == normalized_new:
+                return item
+        # Check database (including deleted/expired items)
+        for item in self._repository.get_all(include_deleted=True, include_expired=True):
+            if item.content.strip().lower() == normalized_new:
+                return item
+        return None
 
     def remember(self, item: MemoryItem) -> None:
-        """Stores a validated memory item.
+        """Stores a validated memory item, updating an existing one if the content matches.
 
         Args:
             item: The MemoryItem instance to store.
         """
-        self._store[item.id] = item
-        logger.info("Saved memory item: %s (ID: %s, Source: %s, Importance: %s)", 
-                    item.content, item.id, item.source, item.importance)
+        existing_item = self._find_by_content(item.content)
+        if existing_item:
+            # Prevent duplicate by updating existing fact
+            existing_item.importance = item.importance
+            existing_item.source = item.source
+            existing_item.expires_at = item.expires_at
+            existing_item.is_deleted = False  # Reactivate if it was soft-deleted
+            existing_item.metadata.update(item.metadata)
+            existing_item.last_accessed_at = datetime.now()
+
+
+            # Sync the input item's properties so the caller reflects the update
+            item.id = existing_item.id
+            item.created_at = existing_item.created_at
+            item.last_accessed_at = existing_item.last_accessed_at
+            item.importance = existing_item.importance
+            item.is_deleted = existing_item.is_deleted
+            item.metadata = existing_item.metadata
+
+            self._repository.save(existing_item)
+            self._store[existing_item.id] = existing_item
+            logger.info("Updated existing memory item: %s (ID: %s, Source: %s, Importance: %s)",
+                        existing_item.content, existing_item.id, existing_item.source, existing_item.importance)
+        else:
+            self._repository.save(item)
+            self._store[item.id] = item
+            logger.info("Saved new memory item: %s (ID: %s, Source: %s, Importance: %s)",
+                        item.content, item.id, item.source, item.importance)
 
     def recall(self, query: str, limit: int = 5) -> list[MemoryItem]:
         """Retrieves and ranks relevant memories, updating their last accessed timestamp.
@@ -53,13 +129,14 @@ class MemoryManager:
         now = datetime.now()
         for item in results:
             item.last_accessed_at = now
-            # Update in-store reference
+            # Update cache reference and repository record
             self._store[item.id] = item
+            self._repository.save(item)
 
         return results
 
     def forget(self, item_id: str) -> bool:
-        """Deletes a memory item by ID.
+        """Deletes a memory item by ID (soft delete).
 
         Args:
             item_id: Unique string ID of memory.
@@ -67,8 +144,10 @@ class MemoryManager:
         Returns:
             bool: True if item was found and deleted, False otherwise.
         """
-        if item_id in self._store:
-            del self._store[item_id]
+        success = self._repository.delete(item_id)
+        if success:
+            if item_id in self._store:
+                del self._store[item_id]
             logger.info("Forgotten memory item: ID %s", item_id)
             return True
         return False
@@ -87,71 +166,16 @@ class MemoryManager:
         if not query or not query.strip():
             return []
 
-        clean_query = query.strip().lower()
-
         if search_type in (SearchType.SEMANTIC, SearchType.HYBRID):
             # TODO: Integrate ChromaDB vector search in V3.0 for semantic/hybrid matches.
-            # 1. Initialize chromadb client and get/create a 'memories' collection.
-            # 2. Generate embeddings for queries using sentence-transformers or Gemini Embeddings API.
-            # 3. Query chromadb index using embeddings and metadata filters.
-            # 4. Map returned document contents back to MemoryItem models.
             logger.warning("Semantic/Hybrid search is not yet implemented (ChromaDB placeholder). Falling back to empty list.")
             return []
 
-        # Default Keyword Search
-        query_words = set(clean_query.split())
-        scored_items: list[tuple[float, MemoryItem]] = []
-
-        def _word_match(w1: str, w2: str) -> bool:
-            w1_clean = w1.strip("?.!,;:\"'").lower()
-            w2_clean = w2.strip("?.!,;:\"'").lower()
-            if not w1_clean or not w2_clean:
-                return False
-            if w1_clean == w2_clean:
-                return True
-            # Prefix stemming for words with length >= 4 (e.g. study and studies both map to stud)
-            if len(w1_clean) >= 4 and len(w2_clean) >= 4:
-                return w1_clean[:4] == w2_clean[:4]
-            return False
-
-        for item in self._store.values():
-            # Filter out deleted and expired items
-            if getattr(item, "is_deleted", False):
-                continue
-            if getattr(item, "expires_at", None) and item.expires_at < datetime.now():
-                continue
-
-            item_content_lower = item.content.lower()
-            item_words = set(item_content_lower.split())
-            
-            # Simple token overlap score with prefix/stem matching
-            overlap_count = 0
-            for qw in query_words:
-                for iw in item_words:
-                    if _word_match(qw, iw):
-                        overlap_count += 1
-                        break
-            
-            # Exact substring match bonus
-            substring_bonus = 0.0
-            if clean_query in item_content_lower:
-                substring_bonus = 5.0
-
-            # Factor in importance score slightly for keyword ranking (e.g. up to +0.5 bonus)
-            importance_bonus = min(item.importance * 0.1, 0.5)
-
-            match_score = overlap_count + substring_bonus
-            if match_score > 0:
-                score = match_score + importance_bonus
-                scored_items.append((score, item))
-
-        # Sort by score descending, then by last_accessed_at descending
-        scored_items.sort(key=lambda x: (x[0], x[1].last_accessed_at), reverse=True)
-
-        return [item for _, item in scored_items[:limit]]
+        # Delegate keyword search directly to repository
+        return self._repository.search(query, limit=limit)
 
     def get_all(self) -> list[MemoryItem]:
-        """Retrieves all stored memory items.
+        """Retrieves all stored memory items from active cache.
 
         Returns:
             list[MemoryItem]: List of all saved memory items.
@@ -161,4 +185,11 @@ class MemoryManager:
     def clear(self) -> None:
         """Clears all stored memories."""
         self._store.clear()
+        self._repository.clear()
         logger.info("Cleared all memory storage.")
+
+    def shutdown(self) -> None:
+        """Cleanly releases any open connection resources in the repository."""
+        logger.info("Shutting down MemoryManager and releasing repository connections...")
+        self._repository.close()
+

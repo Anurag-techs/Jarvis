@@ -56,6 +56,12 @@ class PipelineMemoryStore(BaseMemoryStore):
         self.pipeline = pipeline
         self._recent_turns: list[dict[str, Any]] = []
 
+    def shutdown(self) -> None:
+        """Clean up memory store resources by propagating the shutdown signal."""
+        if hasattr(self.pipeline, "shutdown"):
+            self.pipeline.shutdown()
+
+
     def store_interaction(self, user_query: str, assistant_response: str, metadata: dict[str, Any] | None = None) -> None:
         """Saves a conversation turn to context log and runs long-term fact extraction.
 

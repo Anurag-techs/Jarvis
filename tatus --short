@@ -1,0 +1,41 @@
+warning: in the working copy of '.env.example', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ai/providers/gemini_provider.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/memory/__init__.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/memory/base.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/memory/manager.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/memory/pipeline.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/memory/summarizer.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/test_voice_stabilization.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/test_wake_word.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/voice/base.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/voice/manager.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/voice/providers/faster_whisper_provider.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/voice/wake_word.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'requirements.txt', LF will be replaced by CRLF the next time Git touches it
+ .env.example                                       |   2 [32m+[m[31m-[m
+ .gitignore                                         |   5 [32m+[m
+ backend/ai/providers/gemini_provider.py            | 182 [32m++++[m[31m-[m
+ backend/config/settings.py                         |  38 [32m+[m[31m-[m
+ backend/core/orchestrator.py                       | 151 [32m+++[m[31m-[m
+ backend/core/startup.py                            | 443 [32m+++++++++[m[31m-[m
+ backend/interfaces/voice.py                        | 901 [32m++++++++++++++++++[m[31m---[m
+ backend/main.py                                    |  10 [32m+[m[31m-[m
+ backend/memory/__init__.py                         |   5 [32m+[m
+ backend/memory/base.py                             |   6 [32m+[m
+ backend/memory/manager.py                          | 169 [32m++[m[31m--[m
+ backend/memory/pipeline.py                         |   6 [32m+[m
+ backend/memory/summarizer.py                       |  30 [32m+[m[31m-[m
+ backend/tests/run_tests.py                         |   4 [32m+[m[31m-[m
+ backend/tests/test_startup.py                      |  18 [32m+[m[31m-[m
+ backend/tests/test_voice_stabilization.py          |  13 [32m+[m[31m-[m
+ backend/tests/test_wake_word.py                    |   6 [32m+[m[31m-[m
+ backend/tools/__init__.py                          |   9 [32m+[m
+ backend/voice/base.py                              |   3 [32m+[m[31m-[m
+ backend/voice/manager.py                           |   3 [32m+[m[31m-[m
+ backend/voice/providers/faster_whisper_provider.py |  48 [32m+[m[31m-[m
+ backend/voice/providers/mock_stt_provider.py       |   5 [32m+[m[31m-[m
+ backend/voice/wake_word.py                         | 188 [32m++++[m[31m-[m
+ requirements.txt                                   |   8 [32m+[m[31m-[m
+ 24 files changed, 1965 insertions(+), 288 deletions(-)

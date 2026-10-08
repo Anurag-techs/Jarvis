@@ -106,3 +106,9 @@ class MemoryPipeline:
 
         logger.info("Successfully remembered %d new memory items.", len(new_stored_items))
         return new_stored_items
+
+    def shutdown(self) -> None:
+        """Clean up memory pipeline resources by propagating the shutdown signal."""
+        if hasattr(self.manager, "shutdown"):
+            self.manager.shutdown()
+

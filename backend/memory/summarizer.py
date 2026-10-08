@@ -42,9 +42,9 @@ class MemorySummarizer:
         if not new_memories:
             return []
 
-        # Step 1: Lightweight deduplication based on exact content comparison (case-insensitive)
-        existing_contents = {item.content.strip().lower() for item in existing_memories}
-        
+        from datetime import datetime
+        now = datetime.now()
+
         filtered_memories: list[ExtractedMemory] = []
         seen_new_contents = set()
         
@@ -52,14 +52,28 @@ class MemorySummarizer:
             content_clean = new_mem.content.strip()
             content_lower = content_clean.lower()
             
-            # Skip if it already exists in memory, or is a duplicate within the new batch
-            if content_lower in existing_contents or content_lower in seen_new_contents:
-                logger.debug("Deduplicated memory during consolidation: %s", content_clean)
+            # Skip if it is a duplicate within the new batch
+            if content_lower in seen_new_contents:
+                logger.debug("Deduplicated memory in new batch: %s", content_clean)
                 continue
                 
+            # Find if there is an active matching memory in storage
+            active_existing = None
+            for item in existing_memories:
+                if (not getattr(item, "is_deleted", False)
+                    and (not getattr(item, "expires_at", None) or item.expires_at >= now)
+                    and item.content.strip().lower() == content_lower):
+                    active_existing = item
+                    break
+
+            if active_existing:
+                # If active, check if there's any update needed (e.g. importance or source changes)
+                if active_existing.importance == new_mem.importance and active_existing.source == new_mem.source:
+                    logger.debug("Deduplicated active memory during consolidation: %s", content_clean)
+                    continue
+
             seen_new_contents.add(content_lower)
             filtered_memories.append(new_mem)
 
-        # For more complex/LLM-based conflict resolution, we could invoke the LLM provider here.
-        # As a placeholder, we perform rule-based deduplication above which is robust for V1.
         return filtered_memories
+

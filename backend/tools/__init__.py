@@ -27,6 +27,10 @@ from backend.tools.screenshot_tool import ScreenshotTool
 from backend.tools.search_tool import SearchTool
 from backend.tools.system_tool import SystemTool
 from backend.tools.weather_tool import WeatherTool
+from backend.tools.desktop_automation_tool import DesktopAutomationTool
+from backend.tools.vision_tool import VisionTool
+from backend.tools.planner_tool import PlannerTool
+from backend.tools.camera_tool import CameraTool
 
 __all__ = [
     "BaseTool",
@@ -39,4 +43,9 @@ __all__ = [
     "SearchTool",
     "SystemTool",
     "WeatherTool",
+    "DesktopAutomationTool",
+    "VisionTool",
+    "PlannerTool",
+    "CameraTool",
 ]
+

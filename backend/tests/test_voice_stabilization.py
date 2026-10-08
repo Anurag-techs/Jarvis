@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from backend.ai.provider import MockLLMProvider
 from backend.core.orchestrator import SystemOrchestrator
-from backend.interfaces.voice import VoiceController
+from backend.interfaces.voice import VoiceController, VoiceState
 from backend.tools.registry import ToolRegistry
 from backend.voice.providers import FasterWhisperProvider, MockSTTProvider, MockTTSProvider
 from backend.voice.service import TTSService
@@ -49,10 +49,10 @@ class TestVoiceStabilization(unittest.TestCase):
             mock_sleep.assert_any_call(0.01)
 
 
-    def test_followup_silence_returns_immediately_to_standby(self) -> None:
-        """Verifies follow-up mode exits immediately to Standby on silent transcript without repeating."""
+    def test_no_followup_returns_to_idle(self) -> None:
+        """Verifies FSM returns directly to Standby (IDLE) post-speaking without entering follow-up active listening."""
         stt_mock = MagicMock()
-        stt_mock.listen_and_transcribe.side_effect = ["hello", ""]  # 1st active speech, 2nd follow-up silence
+        stt_mock.listen_and_transcribe.return_value = "hello"
         wake_word = MockWakeWordDetector(trigger_sequence=[True])
 
         controller = VoiceController(
@@ -67,8 +67,9 @@ class TestVoiceStabilization(unittest.TestCase):
         )
 
         controller.start()
-        # Ensure STT called exactly twice (active command + 1 silent follow-up before returning to Standby)
-        self.assertEqual(stt_mock.listen_and_transcribe.call_count, 2)
+        # Ensure STT called exactly once (no follow-up listening)
+        self.assertEqual(stt_mock.listen_and_transcribe.call_count, 1)
+        self.assertEqual(controller.state, VoiceState.IDLE)
 
     def test_stt_and_wake_word_overflow_recovery(self) -> None:
         """Verifies PyAudio stream reads wrap buffer overflow exceptions without crashing."""

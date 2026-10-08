@@ -21,6 +21,7 @@ JARVIS Voice Engine Abstract Interfaces.
 """
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class SpeechToTextProvider(ABC):
@@ -63,7 +64,7 @@ class BaseWakeWordDetector(ABC):
     """Abstract Base Class for wake-word detection engine."""
 
     @abstractmethod
-    def listen_for_wake_word(self) -> bool:
+    def listen_for_wake_word(self, check_running: Any = None, stream: Any = None) -> bool:
         """Blocks until wake word is detected. Returns True when triggered."""
 
 

@@ -21,7 +21,8 @@ from backend.voice.base import SpeechToTextProvider
 class MockSTTProvider(SpeechToTextProvider):
     """Mock STT Provider returning pre-configured transcription text."""
 
-    def __init__(self, default_transcript: str = "What is the weather in London?") -> None:
+    def __init__(self, default_transcript: str = "What is the weather in London?", confidence: float = 1.0) -> None:
+        self.last_transcription_confidence = confidence
         self.default_transcript = default_transcript
         self.recorded_durations: list[float] = []
 
@@ -32,4 +33,6 @@ class MockSTTProvider(SpeechToTextProvider):
 
     def transcribe_audio_bytes(self, audio_bytes: bytes) -> str:
         """Simulates audio byte stream transcription."""
+        self.recorded_durations.append(5.0)
         return self.default_transcript
+

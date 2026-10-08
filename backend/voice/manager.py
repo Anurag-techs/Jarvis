@@ -19,6 +19,7 @@ JARVIS Voice Manager.
 """
 
 import logging
+from typing import Any
 
 from backend.voice.base import BaseSpeechToText, BaseTextToSpeech, BaseWakeWordDetector
 
@@ -43,7 +44,7 @@ class MockTextToSpeech(BaseTextToSpeech):
 class MockWakeWordDetector(BaseWakeWordDetector):
     """V1.0 Mock WakeWord implementation."""
 
-    def listen_for_wake_word(self) -> bool:
+    def listen_for_wake_word(self, check_running: Any = None, stream: Any = None) -> bool:
         logger.debug("MockWakeWord: Triggered")
         return True
 
