@@ -43,14 +43,18 @@ class BrowserTool(BaseTool):
         return "open website" in lowered or "go to" in lowered or "open url" in lowered or "open http" in lowered
 
     def execute(self, **kwargs: Any) -> ToolResult:
-        url = kwargs.get("url") or kwargs.get("query", "").replace("open website", "").replace("go to", "").strip()
+        raw_target = kwargs.get("url") or kwargs.get("query", "").replace("open website", "").replace("go to", "").strip()
 
-        if not url:
+        if not raw_target:
             return ToolResult(
                 success=False,
                 message="Please provide a valid website URL or domain.",
                 error="Missing URL argument",
             )
+
+        # Normalize via centralized website registry if alias or natural language query
+        from backend.services.website_registry import extract_website_target, get_website_url
+        url = get_website_url(raw_target) or extract_website_target(raw_target) or raw_target
 
         if not url.startswith(("http://", "https://")):
             url = f"https://{url}"

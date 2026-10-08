@@ -115,3 +115,39 @@ class TestFalsePositiveGuards:
 
     def test_news_request(self, router):
         assert router.route("Get me the latest news") is None
+
+
+# ---------------------------------------------------------------------------
+# Website launches – must route to 'open_website'
+# ---------------------------------------------------------------------------
+class TestWebsiteRouting:
+    def test_open_youtube(self, router):
+        assert router.route("Open YouTube") == "open_website"
+
+    def test_launch_youtube(self, router):
+        assert router.route("Launch YouTube") == "open_website"
+
+    def test_go_to_youtube(self, router):
+        assert router.route("Go to YouTube") == "open_website"
+
+    def test_open_the_youtube_website(self, router):
+        assert router.route("Open the YouTube website") == "open_website"
+
+    def test_open_gmail(self, router):
+        assert router.route("Open Gmail") == "open_website"
+
+    def test_open_github(self, router):
+        assert router.route("Open GitHub") == "open_website"
+
+    def test_open_chatgpt(self, router):
+        assert router.route("Open ChatGPT") == "open_website"
+
+    def test_open_google_maps(self, router):
+        assert router.route("Open Google Maps") == "open_website"
+
+    def test_open_chrome_routes_to_application(self, router):
+        assert router.route("Open Chrome") == "open_application"
+
+    def test_open_notepad_routes_to_application(self, router):
+        assert router.route("Open Notepad") == "open_application"
+

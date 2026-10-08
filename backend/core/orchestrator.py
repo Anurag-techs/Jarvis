@@ -104,8 +104,23 @@ def _extract_camera_args(raw_query: str) -> dict:
     return {"action": action}
 
 
+def _extract_open_website_args(raw_query: str) -> dict:
+    """Extracts url for open_website tool from queries like 'Open YouTube', 'Go to Gmail'."""
+    from backend.services.website_registry import extract_website_target
+    target_url = extract_website_target(raw_query)
+    if target_url:
+        return {"url": target_url}
+    # Fallback: clean the query of action verbs
+    cleaned = re.sub(r"^\s*(open|launch|go\s+to|visit|browse|navigate\s+to)\s+", "", raw_query, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"[.!?,;]+\s*$", "", cleaned).strip()
+    if not cleaned.startswith(("http://", "https://")):
+        cleaned = f"https://{cleaned}"
+    return {"url": cleaned}
+
+
 _TOOL_ARGUMENT_EXTRACTORS: dict = {
     "open_application": _extract_open_application_args,
+    "open_website": _extract_open_website_args,
     "system_actions": _extract_system_actions_args,
     "camera_actions": _extract_camera_args,
 }

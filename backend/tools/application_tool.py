@@ -127,6 +127,26 @@ class ApplicationTool(BaseTool):
                 error="Missing app_name argument",
             )
 
+        # Check if the requested application name is actually a website alias
+        from backend.services.website_registry import extract_website_target, get_website_url
+        website_url = get_website_url(raw_app_name) or extract_website_target(raw_app_name)
+        if website_url:
+            logger.info("ApplicationTool: '%s' resolved to website '%s'. Opening in browser.", raw_app_name, website_url)
+            try:
+                import webbrowser
+                webbrowser.open(website_url)
+                return ToolResult(
+                    success=True,
+                    message=f"Opening {raw_app_name} in your browser.",
+                    data={"url": website_url, "app_name": raw_app_name},
+                )
+            except Exception as exc:
+                return ToolResult(
+                    success=False,
+                    message=f"Failed to open {raw_app_name} website.",
+                    error=str(exc),
+                )
+
         # Normalize the natural-language name to a launchable executable
         app_name = _normalize_app_name(raw_app_name)
 
